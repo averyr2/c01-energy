@@ -1,7 +1,7 @@
 Energy Consumption Sources by State
 ================
 Avery Rogers
-2020-02-02
+2020-02-05
 
   - [Part I: Energy Consumption for Electricity by State and
     Year](#part-i-energy-consumption-for-electricity-by-state-and-year)
@@ -13,14 +13,17 @@ Avery Rogers
       - [Example plot: Alaska](#example-plot-alaska)
       - [Greatest Consumers By
         Fraction](#greatest-consumers-by-fraction)
+      - [Example: Wood and Waste 2017](#example-wood-and-waste-2017)
   - [Part II: Energy Usage by
     Population](#part-ii-energy-usage-by-population)
       - [Cleaning Population Data](#cleaning-population-data)
       - [Combining The Tibbles](#combining-the-tibbles)
       - [Total Energy Consumption Per Capita by State over
         Time](#total-energy-consumption-per-capita-by-state-over-time)
+      - [Example States](#example-states)
       - [State energy consumption per capita by
         source](#state-energy-consumption-per-capita-by-source)
+      - [Example: Maine](#example-maine)
 
 ``` r
 # Libraries
@@ -199,7 +202,9 @@ plot_amount <- function(state_abbv, state) {
       x = "Year",
       y = "Amount (billion BTU)" ,
       title = str_glue("Energy Consumption by Source in {state}, Total Amount"),
-      caption = "Source: US Energy Information Administration"
+      caption = "Source: US Energy Information Administration",
+      color = "Energy\nSource",
+      fill = "Energy\nSource"
     ) +
     theme(
       panel.background = element_rect(fill = "white"),
@@ -261,11 +266,19 @@ greatest_consumer <- function(target_msn, target_year) {
       panel.grid.minor = element_line(color = "grey92")
     )
 } 
+```
 
+## Example: Wood and Waste 2017
+
+The northeastern states of Maine, New Hampshire, and Vermont consume a
+large fraction of energy sourced from wood and waste as of 2017. Who
+knew\!
+
+``` r
 greatest_consumer("Wood and Waste", 2017)
 ```
 
-![](energy_consumption_files/figure-gfm/unnamed-chunk-6-1.png)<!-- -->
+![](energy_consumption_files/figure-gfm/unnamed-chunk-7-1.png)<!-- -->
 
 # Part II: Energy Usage by Population
 
@@ -306,8 +319,6 @@ total_energy_population <-
   left_join(population_data_clean, by = c("year", "state")) %>% 
   mutate(amount_per_capita = amount / population_thousands)
 
-view(total_energy_population)
-
 fraction_energy_population <- 
   consumption_fractions %>% 
   left_join(population_data_clean, by = c("year", "state"))
@@ -343,11 +354,19 @@ per_capita_energy <- function(state_abbv) {
       panel.grid.minor = element_line(color = "grey92")
     )
 }
+```
 
+## Example States
+
+As we can see, variation among states’ per-capita energy consumption is
+high, with a state like Kentucky consuming nearly three times as many
+BTUs of energy per 1,000 people as California.
+
+``` r
 per_capita_energy(c("FL", "CA", "CT", "CO", "PA", "KY"))
 ```
 
-![](energy_consumption_files/figure-gfm/unnamed-chunk-9-1.png)<!-- -->
+![](energy_consumption_files/figure-gfm/unnamed-chunk-11-1.png)<!-- -->
 
 ## State energy consumption per capita by source
 
@@ -382,7 +401,15 @@ per_capita_compare <- function(state_abbv, state, msn_vars) {
     panel.grid.minor = element_line(color = "grey92")
   )
 }
+```
 
+## Example: Maine
+
+We see a sudden spike in natural gas consumption per capita in Maine
+that trails off after its peak. Hydropower and wood and waste power stay
+relatively constant after 1980.
+
+``` r
 per_capita_compare(
   "ME", 
   "Maine", 
@@ -390,4 +417,4 @@ per_capita_compare(
 )
 ```
 
-![](energy_consumption_files/figure-gfm/unnamed-chunk-10-1.png)<!-- -->
+![](energy_consumption_files/figure-gfm/unnamed-chunk-13-1.png)<!-- -->

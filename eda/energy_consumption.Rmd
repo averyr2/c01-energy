@@ -149,7 +149,9 @@ plot_amount <- function(state_abbv, state) {
       x = "Year",
       y = "Amount (billion BTU)" ,
       title = str_glue("Energy Consumption by Source in {state}, Total Amount"),
-      caption = "Source: US Energy Information Administration"
+      caption = "Source: US Energy Information Administration",
+      color = "Energy\nSource",
+      fill = "Energy\nSource"
     ) +
     theme(
       panel.background = element_rect(fill = "white"),
@@ -195,9 +197,16 @@ greatest_consumer <- function(target_msn, target_year) {
       panel.grid.minor = element_line(color = "grey92")
     )
 } 
+```
 
+## Example: Wood and Waste 2017
+
+The northeastern states of Maine, New Hampshire, and Vermont consume a large fraction of energy sourced from wood and waste as of 2017. Who knew!
+
+```{r}
 greatest_consumer("Wood and Waste", 2017)
 ```
+
 
 # Part II: Energy Usage by Population
 
@@ -233,8 +242,6 @@ total_energy_population <-
   left_join(population_data_clean, by = c("year", "state")) %>% 
   mutate(amount_per_capita = amount / population_thousands)
 
-view(total_energy_population)
-
 fraction_energy_population <- 
   consumption_fractions %>% 
   left_join(population_data_clean, by = c("year", "state"))
@@ -269,7 +276,13 @@ per_capita_energy <- function(state_abbv) {
       panel.grid.minor = element_line(color = "grey92")
     )
 }
+```
 
+## Example States
+
+As we can see, variation among states' per-capita energy consumption is high, with a state like Kentucky consuming nearly three times as many BTUs of energy per 1,000 people as California. 
+
+```{r}
 per_capita_energy(c("FL", "CA", "CT", "CO", "PA", "KY"))
 ```
 
@@ -302,7 +315,13 @@ per_capita_compare <- function(state_abbv, state, msn_vars) {
     panel.grid.minor = element_line(color = "grey92")
   )
 }
+```
 
+## Example: Maine
+
+We see a sudden spike in natural gas consumption per capita in Maine that trails off after its peak. Hydropower and wood and waste power stay relatively constant after 1980. 
+
+```{r}
 per_capita_compare(
   "ME", 
   "Maine", 
