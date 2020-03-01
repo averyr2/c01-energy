@@ -19,11 +19,37 @@ library(lubridate)
 
 # Parameters
 
-energy_data <- 
-  read_rds("/Users/averyrogers/GitHub/c01-energy/data/energy_consumption.rds")
+  # Energy consumption data from EIA
+energy_data <- "~/Downloads/use_all_btu.csv"
 
-population_data <- 
-  read_rds("/Users/averyrogers/GitHub/c01-energy/data/state_population.rds")
+  # State population data from FRED
+population_data <- "~/Downloads/state_population.csv"
+
+# MSN codes to keep
+msn_to_keep <- 
+  c(
+    "CLTCB", 
+    "GETCB", 
+    "HYTCB", 
+    "NGTCB", 
+    "NUETB", 
+    "SOTCB", 
+    "WWTCB",
+    "WYTCB"
+  )
+
+# Recode MSN values
+recode_msn <- 
+  c(
+    "CLTCB" = "Coal",
+    "GETCB" = "Geothermal",
+    "HYTCB" =  "Hydropower",
+    "NGTCB" = "Natural Gas", 
+    "NUETB" = "Nuclear", 
+    "SOTCB" = "Solar",
+    "WWTCB" = "Wood and Waste", 
+    "WYTCB" = "Wind"
+  ) 
 
 #===============================================================================
 
@@ -41,36 +67,14 @@ An important note about this data: all energy usage is measured in BTU, or Briti
 
 ```{r}
 energy_data_clean <- 
-  energy_data %>% 
+  read_csv(energy_data) %>% 
+  rename_all(str_to_lower) %>% 
   select(-data_status) %>% 
   pivot_longer(c("1960":"2017"), names_to = "year", values_to = "amount") %>% 
   mutate(year = as.integer(year)) %>% 
   select(state, year, msn, amount) %>% 
-  filter(
-    msn %in% c(
-      "CLTCB", 
-      "GETCB", 
-      "HYTCB", 
-      "NGTCB", 
-      "NUETB", 
-      "SOTCB", 
-      "WWTCB",
-      "WYTCB"
-    )
-  ) %>% 
-  mutate(
-    msn = 
-      case_when(
-        msn == "CLTCB" ~ "Coal",
-        msn == "GETCB" ~ "Geothermal",
-        msn == "HYTCB"~ "Hydropower",
-        msn == "NGTCB" ~ "Natural Gas", 
-        msn == "NUETB" ~ "Nuclear", 
-        msn == "SOTCB" ~ "Solar",
-        msn == "WWTCB" ~ "Wood and Waste", 
-        msn == "WYTCB" ~ "Wind"
-      ) 
-  ) %>% 
+  filter(msn %in% msn_to_keep) %>% 
+  mutate_at(vars(msn), recode, !!! recode_msn) %>% 
   mutate(amount = replace_na(amount, 0))
 
 energy_data_clean
@@ -118,7 +122,9 @@ plot_fractions <- function(state_abbv, state) {
       x = "Year",
       y = "Percentage of Energy Consumption",
       title = str_glue("Energy Consumption by Source in {state}, Percentage"),
-      caption = "Source: US Energy Information Administration"
+      caption = "Source: US Energy Information Administration",
+      color = "Energy\nSource",
+      fill = "Energy\nSource"
     ) +
     theme(
       panel.background = element_rect(fill = "grey95"),
@@ -172,7 +178,7 @@ plot_amount("AK", "Alaska")
 
 ## Greatest Consumers By Fraction
 
-```{r, fig.height = 7}
+```{r}
 greatest_consumer <- function(target_msn, target_year) {
   consumption_fractions %>% 
     filter(msn == target_msn, year == target_year) %>% 
@@ -203,7 +209,7 @@ greatest_consumer <- function(target_msn, target_year) {
 
 The northeastern states of Maine, New Hampshire, and Vermont consume a large fraction of energy sourced from wood and waste as of 2017. Who knew!
 
-```{r}
+```{r, fig.height = 7}
 greatest_consumer("Wood and Waste", 2017)
 ```
 
@@ -216,7 +222,7 @@ In this section, I wanted to understand the relationship between energy usage an
 
 ```{r}
 population_data_clean <- 
-  population_data %>% 
+  read_csv(population_data) %>% 
   pivot_longer(
     cols = c(AKPOP:WYPOP), 
     names_to = "state", 
@@ -230,6 +236,7 @@ population_data_clean <-
   select(year, state, population_thousands) %>% 
   filter(year > 1959, year < 2018)
 
+population_data_clean
 ```
 
 ## Combining The Tibbles

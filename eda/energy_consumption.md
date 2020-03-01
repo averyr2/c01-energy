@@ -1,7 +1,7 @@
 Energy Consumption Sources by State
 ================
 Avery Rogers
-2020-02-05
+2020-02-29
 
   - [Part I: Energy Consumption for Electricity by State and
     Year](#part-i-energy-consumption-for-electricity-by-state-and-year)
@@ -33,11 +33,37 @@ library(lubridate)
 
 # Parameters
 
-energy_data <- 
-  read_rds("/Users/averyrogers/GitHub/c01-energy/data/energy_consumption.rds")
+  # Energy consumption data from EIA
+energy_data <- "~/Downloads/use_all_btu.csv"
 
-population_data <- 
-  read_rds("/Users/averyrogers/GitHub/c01-energy/data/state_population.rds")
+  # State population data from FRED
+population_data <- "~/Downloads/state_population.csv"
+
+# MSN codes to keep
+msn_to_keep <- 
+  c(
+    "CLTCB", 
+    "GETCB", 
+    "HYTCB", 
+    "NGTCB", 
+    "NUETB", 
+    "SOTCB", 
+    "WWTCB",
+    "WYTCB"
+  )
+
+# Recode MSN values
+recode_msn <- 
+  c(
+    "CLTCB" = "Coal",
+    "GETCB" = "Geothermal",
+    "HYTCB" =  "Hydropower",
+    "NGTCB" = "Natural Gas", 
+    "NUETB" = "Nuclear", 
+    "SOTCB" = "Solar",
+    "WWTCB" = "Wood and Waste", 
+    "WYTCB" = "Wind"
+  ) 
 
 #===============================================================================
 ```
@@ -65,38 +91,28 @@ best unit of measurement for comparing different energy sources.
 
 ``` r
 energy_data_clean <- 
-  energy_data %>% 
+  read_csv(energy_data) %>% 
+  rename_all(str_to_lower) %>% 
   select(-data_status) %>% 
   pivot_longer(c("1960":"2017"), names_to = "year", values_to = "amount") %>% 
   mutate(year = as.integer(year)) %>% 
   select(state, year, msn, amount) %>% 
-  filter(
-    msn %in% c(
-      "CLTCB", 
-      "GETCB", 
-      "HYTCB", 
-      "NGTCB", 
-      "NUETB", 
-      "SOTCB", 
-      "WWTCB",
-      "WYTCB"
-    )
-  ) %>% 
-  mutate(
-    msn = 
-      case_when(
-        msn == "CLTCB" ~ "Coal",
-        msn == "GETCB" ~ "Geothermal",
-        msn == "HYTCB"~ "Hydropower",
-        msn == "NGTCB" ~ "Natural Gas", 
-        msn == "NUETB" ~ "Nuclear", 
-        msn == "SOTCB" ~ "Solar",
-        msn == "WWTCB" ~ "Wood and Waste", 
-        msn == "WYTCB" ~ "Wind"
-      ) 
-  ) %>% 
+  filter(msn %in% msn_to_keep) %>% 
+  mutate_at(vars(msn), recode, !!! recode_msn) %>% 
   mutate(amount = replace_na(amount, 0))
+```
 
+    ## Parsed with column specification:
+    ## cols(
+    ##   .default = col_double(),
+    ##   Data_Status = col_character(),
+    ##   State = col_character(),
+    ##   MSN = col_character()
+    ## )
+
+    ## See spec(...) for full column specifications.
+
+``` r
 energy_data_clean
 ```
 
@@ -171,7 +187,9 @@ plot_fractions <- function(state_abbv, state) {
       x = "Year",
       y = "Percentage of Energy Consumption",
       title = str_glue("Energy Consumption by Source in {state}, Percentage"),
-      caption = "Source: US Energy Information Administration"
+      caption = "Source: US Energy Information Administration",
+      color = "Energy\nSource",
+      fill = "Energy\nSource"
     ) +
     theme(
       panel.background = element_rect(fill = "grey95"),
@@ -293,7 +311,7 @@ direction in terms of sustainability.
 
 ``` r
 population_data_clean <- 
-  population_data %>% 
+  read_csv(population_data) %>% 
   pivot_longer(
     cols = c(AKPOP:WYPOP), 
     names_to = "state", 
@@ -307,6 +325,33 @@ population_data_clean <-
   select(year, state, population_thousands) %>% 
   filter(year > 1959, year < 2018)
 ```
+
+    ## Parsed with column specification:
+    ## cols(
+    ##   .default = col_double(),
+    ##   DATE = col_date(format = "")
+    ## )
+
+    ## See spec(...) for full column specifications.
+
+``` r
+population_data_clean
+```
+
+    ## # A tibble: 2,958 x 3
+    ##     year state population_thousands
+    ##    <int> <chr>                <int>
+    ##  1  1960 AK                     229
+    ##  2  1960 AL                    3274
+    ##  3  1960 AR                    1789
+    ##  4  1960 AZ                    1321
+    ##  5  1960 CA                   15870
+    ##  6  1960 CO                    1769
+    ##  7  1960 CT                    2544
+    ##  8  1960 DC                     765
+    ##  9  1960 DE                     449
+    ## 10  1960 FL                    5004
+    ## # … with 2,948 more rows
 
 ## Combining The Tibbles
 
