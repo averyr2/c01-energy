@@ -25,6 +25,9 @@ energy_data <- "~/Downloads/use_all_btu.csv"
   # State population data from FRED
 population_data <- "~/Downloads/state_population.csv"
 
+# Day-ahead demand forecast API
+balance_data <- ("~/GitHub/EIA930_BALANCE_2020_Jan_Jun.csv")
+
 # MSN codes to keep
 msn_to_keep <- 
   c(
@@ -51,6 +54,26 @@ recode_msn <-
     "WYTCB" = "Wind"
   ) 
 
+  # Variable types for balancing authority data
+vars_types <- 
+  cols_only(
+    `Balancing Authority` = col_character(),
+    `Data Date` = col_character(),
+    `Hour Number` = col_character(),
+    `Demand Forecast (MW)` = col_character(),
+    `Demand (MW)` = col_character(),
+    `Net Generation (MW)` = col_character(),
+    `Total Interchange (MW)` = col_character(),
+    `Net Generation (MW) from Coal` = col_character(),
+    `Net Generation (MW) from Natural Gas` = col_character(),
+    `Net Generation (MW) from Nuclear` = col_character(),
+    `Net Generation (MW) from Solar` = col_character(),
+    `Net Generation (MW) from Wind` = col_character()
+  )
+
+# Vector of top balancing authorities
+TOP_AUTHORITIES <- c("PJM", "MISO", "SOCO", "ERCO", "SWPP", "CISO")
+
 #===============================================================================
 
 
@@ -58,7 +81,7 @@ recode_msn <-
 
 # Part I: Energy Consumption for Electricity by State and Year
 
-In this section, I am only looking at the sources of energy that primarily contribute to electricity generation across states: coal, geothermal power, hydropower, natural gas, nuclear power, solar power, wood and waste power, and wind power. I remove all the other energy usage statistics from the dataset to hone in on these. Most notably, I remove petroleum, which is the largest source of energy in many states but primarily for transportation rather than electriticy in the grid. Petroleum usage will be covered in a later section. 
+In this section, I am only looking at the sources of energy that primarily contribute to electricity generation across states: coal, geothermal power, hydropower, natural gas, nuclear power, solar power, wood and waste power, and wind power. I remove all the other energy usage statistics from the dataset to hone in on these. Most notably, I remove petroleum, which is the largest source of energy in many states but primarily for transportation rather than electriticy in the grid. 
 
 An important note about this data: all energy usage is measured in BTU, or British Thermal Units. One BTU is the amount of energy needed to raise one pound of water by one degree Fahrenheit. (I'm not sure why it's called _British_ thermal units if the measurements it uses are imperial!). One BTU is approximately 1,055 joules. BTU is the unit used to sell natural gas in the US (dollars per million BTUs), and is the best unit of measurement for comparing different energy sources. 
 
@@ -336,3 +359,326 @@ per_capita_compare(
 )
 ```
 
+
+
+
+# Part III: Energy Demand and Generation at Top Electricity Balancing Authorities
+
+For this portion of my C01, I wanted to explore the different electricity balancing authorities across the United States and understand how they generate enrgy on a more granular level, as well as how they calibrate their forecasts with demand and generation. Here, I will focus on the 6 largest balancing authorities, which operate most of the US electricity markets: 
+
+* PJM: Standing for Pennsylvania-New Jersey-Maryland Connection, the PJM serves the Mid-Atlantic region and some of the Northeast.
+*MISO: Stanfind for Midcontinent Independent System Operator, MISO serves the upper Midwest and parts of the South. 
+* SOCO: Standing for Southern Company Services, SOCO serves the majority of the American South. 
+* ERCO: Standing for Electric Reliability Council of Texas, ERCO serves the state of Texas.
+* SWPP: Standing for Southwest Power Pool, SWPP serves the American Southwest. 
+* CISO: Standing for California Independent Service Operator, CISO serves the state of California. 
+
+## Tidying the Data
+
+```{r}
+balance <- 
+  balance_data %>% 
+  read_csv(col_types = vars_types) %>% 
+  transmute(
+    balancing_authority = (`Balancing Authority`),
+    datetime = mdy_h(paste(`Data Date`, `Hour Number`)),
+    demand_forecast = `Demand Forecast (MW)`,
+    demand = `Demand (MW)`,
+    net_generation = `Net Generation (MW)`,
+    total_interchange = `Total Interchange (MW)`,
+    net_gen_coal = `Net Generation (MW) from Coal`,
+    net_gen_natgas = `Net Generation (MW) from Natural Gas`,
+    net_gen_nuclear = `Net Generation (MW) from Nuclear`,
+    net_gen_solar = `Net Generation (MW) from Solar`,
+    net_gen_wind = `Net Generation (MW) from Wind`
+  ) %>% 
+  filter(balancing_authority %in% TOP_AUTHORITIES) %>% 
+  mutate_at(vars(demand_forecast:net_gen_wind), ~ as.integer(str_remove(., ",")))
+  
+balance
+```
+
+
+## Checking if Demand, Generation, and Interchange Data Add Up
+
+```{r}
+balance %>% 
+  filter(demand != net_generation - total_interchange)
+
+balance %>% 
+  mutate(difference = demand - net_generation + total_interchange) %>% 
+  select(difference) %>%
+  summary
+  
+```
+
+We can see here that 4,173 of the 6,912 entries in our data do not have net generation minus total interchange equal to demand. In other words, most of our entries do not have balanced energy production and energy consumption. Looking more closely at the distribution of these values, we see that the median difference between generation and consumption is 0, though the mean is 327 MW. Stunningly, the minimum difference is -8,629 MW, and the maximum is 13,612 MW. This isn't great news for our analysis. Let's see if there are any particular facilities that aren't adding up:
+
+```{r}
+balance %>% 
+  filter(demand != net_generation - total_interchange) %>% 
+  count(balancing_authority)
+```
+
+It looks like CISO, MISO, and PJM have the most errors, with ERCO and SWPP following. SOCO has almost no errors in its reporting. Unfortunately, the EIA website does not offer much guidance on these errors. They provide a disclaimer at the bottom of their balancing authority data that "The information submitted by reporting entities is preliminary data and is made available "as-is" by EIA. Neither EIA nor reporting entities are responsible for reliance on the data for any specific use."
+
+
+## Net Generation by Balancing Authority
+
+Here, I compare the net generation in January, 2020 for each operator. 
+
+```{r}
+balance  %>% 
+  filter(month(datetime) == 1) %>% 
+  group_by(balancing_authority) %>% 
+  summarize(
+    total_gen_jan = sum(net_generation, na.rm = TRUE),
+    total_demand_jan = sum(demand, na.rm = TRUE)
+  ) %>% 
+  pivot_longer(
+    cols = c(total_gen_jan, total_demand_jan), 
+    names_to = "type_use", 
+    values_to = "megawatts"
+  ) %>% 
+  ggplot(aes(fct_rev(fct_reorder(balancing_authority, megawatts)), megawatts, fill = type_use)) + 
+  geom_col(position = "dodge") +
+  scale_fill_manual(
+    labels = c("Demand", "Net Generation"), 
+    values = c("brown1", "skyblue")
+  ) +
+  labs(
+    x = "Balancing Authority",
+    y = "Total Generation in January (MW)",
+    title = "Generation Levels by Balancing Authority",
+    fill = "Energy Information\nType"
+  )
+  
+```
+
+As we can see, PJM is operates the most electricity of all the authorities, followed by MISO and the rest with significantly less electricity under their control. Interestingly, PJM is the only authority that produced more energy in Jan 2020 than it used, ERCO, SWPP, and SOCO were approximately balanced in generation and demand, and MISO and CISO's residents demanded more than the authorities generated in this period. 
+
+
+## Balancing Authority by Energy Source
+
+Here, I look at each source of energy tracked by the Energy Information Administration - natural gas, coal, nuclear, solar, and wind, and their usage levels across the balance authorities.
+
+### Coal
+
+```{r}
+balance  %>% 
+  filter(datetime < "2020-01-02 0:00:00") %>% 
+  ggplot(aes(datetime, net_gen_coal, color = balancing_authority)) + 
+  geom_line() +
+  scale_x_datetime(date_breaks = "4 hours", date_labels = "%b %e, %l%p") +
+  theme(axis.text.x = element_text(angle = -45, hjust = 0)) +
+  labs(
+    x = "Date and Time",
+    y = "Net Generation (Megawatts) From Coal",
+    title = "Electricity generation from coal by balancing authority",
+    color = "Balancing\nAuthority"
+  ) +
+  theme(
+    panel.background = element_rect(fill = "white"),
+    panel.grid.major = element_line(color = "grey92"),
+    panel.grid.minor = element_line(color = "grey92")
+  )
+```
+
+### Nuclear
+
+```{r}
+balance  %>% 
+  filter(datetime < "2020-01-02 0:00:00") %>% 
+  ggplot(aes(datetime, net_gen_nuclear, color = balancing_authority)) + 
+  geom_line() +
+  scale_x_datetime(date_breaks = "4 hours", date_labels = "%b %e, %l%p") +
+  theme(axis.text.x = element_text(angle = -45, hjust = 0)) +
+  labs(
+    x = "Date and Time",
+    y = "Net Generation (Megawatts) From Nuclear",
+    title = "Electricity generation from nuclear by balancing authority",
+    color = "Balancing\nAuthority"
+  ) +
+  theme(
+    panel.background = element_rect(fill = "white"),
+    panel.grid.major = element_line(color = "grey92"),
+    panel.grid.minor = element_line(color = "grey92")
+  )
+```
+
+### Natural Gas
+
+```{r}
+balance  %>% 
+  filter(datetime < "2020-01-02 0:00:00") %>% 
+  ggplot(aes(datetime, net_gen_natgas, color = balancing_authority)) + 
+  geom_line() +
+  scale_x_datetime(date_breaks = "4 hours", date_labels = "%b %e, %l%p") +
+  theme(axis.text.x = element_text(angle = -45, hjust = 0)) +
+  labs(
+    x = "Date and Time",
+    y = "Net Generation (Megawatts) From Natural Gas",
+    title = "Electricity generation from natural gas by balancing authority",
+    color = "Balancing\nAuthority"
+  ) +
+  theme(
+    panel.background = element_rect(fill = "white"),
+    panel.grid.major = element_line(color = "grey92"),
+    panel.grid.minor = element_line(color = "grey92")
+  )
+```
+
+### Solar
+
+```{r}
+balance  %>% 
+  filter(datetime < "2020-01-02 0:00:00") %>% 
+  ggplot(aes(datetime, net_gen_solar, color = balancing_authority)) + 
+  geom_line() +
+  scale_x_datetime(date_breaks = "4 hours", date_labels = "%b %e, %l%p") +
+  theme(axis.text.x = element_text(angle = -45, hjust = 0)) +
+  labs(
+    x = "Date and Time",
+    y = "Net Generation (Megawatts) From Solar",
+    title = "Electricity generation from solar by balancing authority",
+    color = "Balancing\nAuthority"
+  ) +
+  theme(
+    panel.background = element_rect(fill = "white"),
+    panel.grid.major = element_line(color = "grey92"),
+    panel.grid.minor = element_line(color = "grey92")
+  )
+```
+
+
+
+### Wind
+
+```{r}
+balance  %>% 
+  filter(datetime < "2020-01-02 0:00:00") %>% 
+  ggplot(aes(datetime, net_gen_wind, color = balancing_authority)) + 
+  geom_line() +
+  scale_x_datetime(date_breaks = "4 hours", date_labels = "%b %e, %l%p") +
+  theme(axis.text.x = element_text(angle = -45, hjust = 0)) +
+  labs(
+    x = "Date and Time",
+    y = "Net Generation (Megawatts) From Wind",
+    title = "Electricity generation from wind by balancing authority",
+    color = "Balancing\nAuthority"
+  ) +
+  theme(
+    panel.background = element_rect(fill = "white"),
+    panel.grid.major = element_line(color = "grey92"),
+    panel.grid.minor = element_line(color = "grey92")
+  )
+```
+
+## Renewable Energy Reliability Around the Clock
+
+For this section, I want to look at wind, solar, and nuclear at the balancing authorities where they are most common to see how they do as far as reliability over the course of many days. The patterns that emerge will be instructive for understanding the possible energy mixes of a greener future with reliable electricity. 
+
+### Solar
+
+```{r}
+balance  %>% 
+  filter(balancing_authority == "CISO") %>% 
+  filter(datetime < "2020-01-11 0:00:00") %>% 
+  ggplot(aes(datetime, net_gen_solar)) + 
+  geom_segment(
+    aes(x = datetime, y = 0, xend = datetime, yend = net_gen_solar), 
+    color = "darkblue"
+  ) +
+  scale_x_datetime(date_labels = "%b %e") +
+  labs(
+    x = "Date",
+    y = "Net Generation (Megawatts) From Solar",
+    title = "Hourly electricity generation from solar by CISO"
+  ) +
+  theme(
+    panel.background = element_rect(fill = "white"),
+    panel.grid.major = element_line(color = "grey92"),
+    panel.grid.minor = element_line(color = "grey92")
+  )
+```
+
+As we can see, solar has similar peaks in its electricity productivity each day in California, where sunshine is fairly abundant and regular. However, as is to be expected, solar capacity drops to zero in the late hours of the day until the sun is back up. To get a more complete sense of this picture, let's zoom in on a day: 
+
+```{r}
+balance  %>% 
+  filter(balancing_authority == "CISO") %>% 
+  filter(date(datetime) == "2020-01-01") %>% 
+  ggplot(aes(datetime, net_gen_solar)) + 
+  geom_segment(
+    aes(x = datetime, y = 0, xend = datetime, yend = net_gen_solar), 
+    color = "darkblue",
+    size = 4
+  ) +
+  scale_x_datetime(breaks = "3 hours") +
+  scale_x_datetime(date_breaks = "3 hours", date_labels = "%l%p") +
+  theme(axis.text.x = element_text(angle = -45, hjust = 0)) +
+  labs(
+    x = "Time on January 1st",
+    y = "Net Generation (Megawatts) From Solar",
+    title = "Hourly electricity generation from solar by CISO on Jan 1st, 2020"
+  ) +
+  theme(
+    panel.background = element_rect(fill = "white"),
+    panel.grid.major = element_line(color = "grey92"),
+    panel.grid.minor = element_line(color = "grey92")
+  )
+```
+
+As we see here, solar only generates any electricity from 8AM - 4PM in the winter in California, with the builk between 9AM and 3PM. 
+
+### Wind
+
+```{r}
+balance  %>% 
+  filter(balancing_authority == "ERCO") %>% 
+  filter(datetime < "2020-01-11 0:00:00") %>% 
+  ggplot(aes(datetime, net_gen_wind)) + 
+  geom_segment(
+    aes(x = datetime, y = 0, xend = datetime, yend = net_gen_wind), 
+    color = "darkblue"
+  ) +
+  scale_x_datetime(date_labels = "%b %e") +
+  labs(
+    x = "Date",
+    y = "Net Generation (Megawatts) From Wind",
+    title = "Hourly electricity generation from wind by ERCO"
+  ) +
+  theme(
+    panel.background = element_rect(fill = "white"),
+    panel.grid.major = element_line(color = "grey92"),
+    panel.grid.minor = element_line(color = "grey92")
+  )
+```
+
+Looking at wind electricity productivity in Texas under ERCO, we see that its productivity does not have the same daily peaks and falls as solar energy does in California, but rather has an unpredictable pattern across days depending on weather conditions. 
+
+### Nuclear
+
+```{r}
+balance  %>% 
+  filter(balancing_authority == "PJM") %>% 
+  filter(datetime < "2020-01-11 0:00:00") %>% 
+  ggplot(aes(datetime, net_gen_nuclear)) + 
+  geom_segment(
+    aes(x = datetime, y = 0, xend = datetime, yend = net_gen_nuclear), 
+    color = "darkblue"
+  ) +
+  scale_x_datetime(date_labels = "%b %e") +
+  labs(
+    x = "Date",
+    y = "Net Generation (Megawatts) From Nuclear",
+    title = "Hourly electricity generation from nuclear by PJM"
+  ) +
+  theme(
+    panel.background = element_rect(fill = "white"),
+    panel.grid.major = element_line(color = "grey92"),
+    panel.grid.minor = element_line(color = "grey92")
+  )
+```
+
+Nuclear, as we see from PJM, is by far the most stable source of renewable energy documented by the EIA across balance authorities. It has nearly perfect consistency across all hours of the day, every day of the week. 
